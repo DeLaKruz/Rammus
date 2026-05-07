@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="400.0" prefWidth="900.0" xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1" fx:controller="xortroll.goldleaf.quark.ui.MainController">
+   <children>
+      <AnchorPane fx:id="MainPane" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" VBox.vgrow="ALWAYS">
+         <children>
+            <Label fx:id="USBStatusLabel" layoutX="14.0" layoutY="373.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" text="Starting Quark..." AnchorPane.bottomAnchor="11.0" AnchorPane.leftAnchor="14.0" />
+            <TextArea fx:id="LogArea" editable="false" layoutX="14.0" layoutY="14.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="298.0" prefWidth="370.0" AnchorPane.bottomAnchor="88.0" AnchorPane.leftAnchor="14.0" AnchorPane.rightAnchor="516.0" AnchorPane.topAnchor="14.0" />
+            <ListView fx:id="PathList" layoutX="397.0" layoutY="58.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="305.0" prefWidth="485.0" AnchorPane.bottomAnchor="37.0" AnchorPane.rightAnchor="18.0" AnchorPane.topAnchor="58.0" />
+            <Button fx:id="NewPathButton" layoutX="397.0" layoutY="14.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="32.0" prefWidth="219.0" text="Add new path" AnchorPane.rightAnchor="284.0" AnchorPane.topAnchor="14.0" />
+            <ToggleButton fx:id="ShowLogsToggle" layoutX="24.0" layoutY="325.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="24.0" prefWidth="349.0" text="Show logs" AnchorPane.bottomAnchor="51.0" AnchorPane.leftAnchor="24.0" />
+            <Button fx:id="PathRemoveButton" layoutX="630.0" layoutY="14.0" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefHeight="32.0" prefWidth="252.0" text="Remove selected path" AnchorPane.rightAnchor="18.0" AnchorPane.topAnchor="14.0" />
+         </children>
+      </AnchorPane>
+   </children>
+</VBox>

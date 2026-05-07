@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "name": "windows-gcc-x86",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "C:/devkitPro/libnx/include",
+        "C:/devkitPro/libnx/include/sys",
+        "C:/devkitPro/libnx/include/netinet",
+        "C:/devkitPro/libnx/include/arpa",
+        "C:/devkitPro/devkitA64/aarch64-none-elf/include",
+        "C:/devkitPro/Rammus/include"
+      ],
+      "compilerPath": "C:/MinGW/bin/gcc.exe",
+      "cStandard": "${default}",
+      "cppStandard": "${default}",
+      "intelliSenseMode": "windows-gcc-x86",
+      "compilerArgs": [
+        ""
+      ]
+    }
+  ],
+  "version": 4
+}
