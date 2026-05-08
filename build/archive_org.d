@@ -177,6 +177,7 @@ archive_org.o: C:/devkitPro/Rammus/source/archive_org.c \
  C:/devkitPro/Rammus/include/path_navigator.h \
  C:/devkitPro/Rammus/include/config.h \
  C:/devkitPro/Rammus/include/downloader.h \
+ C:/devkitPro/Rammus/include/save_manager.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_main.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_stdinc.h \
@@ -421,6 +422,7 @@ C:/devkitPro/Rammus/include/repository.h:
 C:/devkitPro/Rammus/include/path_navigator.h:
 C:/devkitPro/Rammus/include/config.h:
 C:/devkitPro/Rammus/include/downloader.h:
+C:/devkitPro/Rammus/include/save_manager.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL_main.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL_stdinc.h:

@@ -172,7 +172,8 @@ path_navigator.o: C:/devkitPro/Rammus/source/path_navigator.c \
  C:/devkitPro/libnx/include/switch/crypto/cmac.h \
  C:/devkitPro/libnx/include/switch/crypto/sha1.h \
  C:/devkitPro/libnx/include/switch/crypto/hmac.h \
- C:/devkitPro/libnx/include/switch/crypto/crc.h
+ C:/devkitPro/libnx/include/switch/crypto/crc.h \
+ C:/devkitPro/Rammus/include/main.h
 C:/devkitPro/Rammus/include/path_navigator.h:
 C:/devkitPro/libnx/include/switch.h:
 C:/devkitPro/libnx/include/switch/types.h:
@@ -347,3 +348,4 @@ C:/devkitPro/libnx/include/switch/crypto/cmac.h:
 C:/devkitPro/libnx/include/switch/crypto/sha1.h:
 C:/devkitPro/libnx/include/switch/crypto/hmac.h:
 C:/devkitPro/libnx/include/switch/crypto/crc.h:
+C:/devkitPro/Rammus/include/main.h:

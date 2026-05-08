@@ -10,8 +10,8 @@ typedef struct {
     int selected_entry;
 } PathNavigator;
 
-// Función de utilidad definida en main.c
-int ensure_sdmc_mounted(void);
+// Función de utilidad definida en main.h
+// int ensure_sdmc_mounted(void); // Ya no es necesaria aquí, se incluye en main.h
 
 // Crear/destruir navegador
 PathNavigator* path_navigator_create(const char *initial_path);

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "main.h" // Para ensure_sdmc_mounted, si es necesario
 
 static void normalize_sdmc_path(const char *path, char *out, size_t size) {
     if (!out || size == 0) return;

@@ -12,6 +12,7 @@ AppConfig* config_create(void) {
     AppConfig *config = (AppConfig*)malloc(sizeof(AppConfig));
     if (config) {
         strcpy(config->download_path, "sdmc:/");
+        strcpy(config->save_backup_path, "sdmc:/switch/JKSV/"); // Ruta por defecto para backups
         config->repo_count = 0;
         config->custom_repos = NULL;
         ensure_config_dir_exists();
@@ -49,6 +50,11 @@ int config_load(AppConfig *config) {
     // Leer ruta de descarga
     if (fgets(line, sizeof(line), f)) {
         sscanf(line, "download_path=%511s", config->download_path);
+    }
+
+    // Leer ruta de copias de guardado
+    if (fgets(line, sizeof(line), f)) {
+        sscanf(line, "save_backup_path=%511s", config->save_backup_path);
     }
     
     // Leer cantidad de repositorios
@@ -108,6 +114,7 @@ int config_save(AppConfig *config) {
     }
     
     fprintf(f, "download_path=%s\n", config->download_path);
+    fprintf(f, "save_backup_path=%s\n", config->save_backup_path);
     fprintf(f, "repo_count=%d\n", config->repo_count);
     
     for (int i = 0; i < config->repo_count; i++) {
@@ -126,9 +133,20 @@ void config_set_download_path(AppConfig *config, const char *path) {
     config->download_path[sizeof(config->download_path) - 1] = '\0';
 }
 
+void config_set_save_backup_path(AppConfig *config, const char *path) {
+    if (!config || !path) return;
+    strncpy(config->save_backup_path, path, sizeof(config->save_backup_path) - 1);
+    config->save_backup_path[sizeof(config->save_backup_path) - 1] = '\0';
+}
+
 const char* config_get_download_path(AppConfig *config) {
     if (!config) return NULL;
     return config->download_path;
+}
+
+const char* config_get_save_backup_path(AppConfig *config) {
+    if (!config) return NULL;
+    return config->save_backup_path;
 }
 
 void config_add_custom_repo(AppConfig *config, const char *name, const char *archive_url, const char *download_path) {

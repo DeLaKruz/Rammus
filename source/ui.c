@@ -17,7 +17,7 @@ void draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, 
 }
 
 void ui_draw_tabs(UIState *state) {
-    const char *tabs[] = {"REPOSITORIOS", "FUTURO", "AJUSTES"};
+    const char *tabs[] = {"REPOSITORIOS", "COPIAS", "AJUSTES"}; // Renombrado de FUTURO a COPIAS
     SDL_Color white = {255, 255, 255, 255};
     SDL_Color active_cyan = {0, 255, 255, 255};
 
@@ -42,6 +42,25 @@ void ui_draw_tabs(UIState *state) {
             SDL_SetRenderDrawColor(state->renderer, 0, 255, 255, 255);
             SDL_RenderFillRect(state->renderer, &indicator);
         }
+    }
+
+    // Dibujar logo de la aplicación en la parte superior izquierda
+    if (state->tex_logo) {
+        SDL_Rect logo_rect = {25, 15, 50, 50};
+        SDL_RenderCopy(state->renderer, state->tex_logo, NULL, &logo_rect);
+    }
+
+    // Dibujar usuario actual en la esquina superior derecha
+    if (state->save_mgr && state->save_mgr->user_count > 0) {
+        char user_text[64];
+        if (state->save_mgr->current_user_index == 0) 
+            snprintf(user_text, sizeof(user_text), "Modo: %s", state->save_mgr->users[0].name);
+        else
+            snprintf(user_text, sizeof(user_text), "User: %s", state->save_mgr->users[state->save_mgr->current_user_index].name);
+            
+        int utw, uth;
+        TTF_SizeUTF8(state->font_small, user_text, &utw, &uth);
+        draw_text(state->renderer, state->font_small, user_text, 1240 - utw, 30, white);
     }
 }
 
@@ -73,8 +92,7 @@ void ui_draw_progress(UIState *state) {
     draw_text(state->renderer, state->font_small, pct, 860, 300, white);
 }
 
-static void ui_ensure_scroll(int *offset, int selected, int count) {
-    const int visible_items = 10;
+static void ui_ensure_scroll(int *offset, int selected, int count, int visible_items) {
     if (!offset) return;
     if (count <= visible_items) {
         *offset = 0;
@@ -119,7 +137,13 @@ UIState* ui_state_create(void) {
         state->tex_folder = NULL;
         state->tex_file = NULL;
         state->tex_link = NULL;
+        state->tex_logo = NULL;
+        state->tex_game_icon = NULL; // Inicializar nueva textura
+        state->save_mgr = save_manager_create();
         state->tex_settings = NULL;
+        state->selected_save_option = 0;
+        state->pending_action = 0;
+        state->target_save_path[0] = '\0';
     }
     return state;
 }
@@ -128,6 +152,9 @@ void ui_state_destroy(UIState *state) {
     if (state) {
         if (state->path_nav) {
             path_navigator_destroy(state->path_nav);
+        }
+        if (state->save_mgr) {
+            save_manager_destroy(state->save_mgr, state->renderer);
         }
         free(state);
     }
@@ -226,7 +253,7 @@ void ui_draw_repository_browser(Repository *repo, UIState *state, AppConfig *con
     if (repo->item_count == 0) {
         draw_text(state->renderer, state->font_main, "Cargando o carpeta vacía...", 100, 200, dark_grey);
     } else {
-        ui_ensure_scroll(&state->browser_scroll_offset, state->selected_item, repo->item_count);
+        ui_ensure_scroll(&state->browser_scroll_offset, state->selected_item, repo->item_count, 11);
         
         int start = state->browser_scroll_offset;
         int visible_count = 11;
@@ -265,20 +292,154 @@ void ui_draw_settings_menu(UIState *state, AppConfig *config) {
     ui_draw_tabs(state);
     SDL_Color dark_text = {30, 30, 30, 255};
 
-    int y = 160;
-    if (state->selected_setting == 0) {
-        SDL_Rect highlight = {80, y - 5, 1120, 50};
-        SDL_SetRenderDrawColor(state->renderer, 180, 220, 255, 255);
-        SDL_RenderFillRect(state->renderer, &highlight);
+    const char *items[] = {
+        "Gestionar repositorios",
+        "Elegir carpeta de destino de copias de juegos" // Nueva opción
+    };
+
+    for (int i = 0; i < 2; i++) { // Ahora hay 2 opciones
+        int y = 160 + (i * 60);
+        if (i == state->selected_setting) {
+            SDL_Rect highlight = {80, y - 5, 1120, 50};
+            SDL_SetRenderDrawColor(state->renderer, 180, 220, 255, 255);
+            SDL_RenderFillRect(state->renderer, &highlight);
+        }
+        draw_text(state->renderer, state->font_main, items[i], 120, y, dark_text);
     }
-    draw_text(state->renderer, state->font_main, "Gestionar repositorios", 120, y, dark_text);
+    
+    // Mostrar ruta actual de copias de guardado
+    SDL_Color light_grey_text = {100, 100, 100, 255};
+    char path_label[1100];
+    snprintf(path_label, sizeof(path_label), "Ruta actual: %s", config_get_save_backup_path(config));
+    draw_text(state->renderer, state->font_small, path_label, 120, 280, light_grey_text); // Bajado a 280
 
     // Barra inferior de instrucciones
-    SDL_Color white = {255, 255, 255, 255}; // Declarar 'white' localmente
+    SDL_Color white = {255, 255, 255, 255};
     SDL_Rect footer = {0, 640, 1280, 80};
-    SDL_SetRenderDrawColor(state->renderer, 20, 60, 90, 255); // Corregido: state->renderer->renderer a state->renderer
+    SDL_SetRenderDrawColor(state->renderer, 20, 60, 90, 255);
     SDL_RenderFillRect(state->renderer, &footer);
-    draw_text(state->renderer, state->font_small, "(A) Seleccionar  (L/R) Cambiar Pestaña", 40, 665, white); // Usar 'white' local
+    draw_text(state->renderer, state->font_small, "(A) Seleccionar  (L/R) Cambiar Pestaña", 40, 665, white);
+}
+
+void ui_draw_restore_menu(UIState *state) {
+    SDL_SetRenderDrawColor(state->renderer, 240, 245, 250, 255);
+    SDL_RenderClear(state->renderer);
+    ui_draw_tabs(state);
+    SDL_Color dark_text = {30, 30, 30, 255}; SDL_Color white = {255, 255, 255, 255};
+    SaveManager *sm = state->save_mgr;
+    if (!sm || !sm->restore_entry) return;
+
+    char title[1024];
+    snprintf(title, sizeof(title), "Restaurar: %s", sm->restore_entry->name);
+    draw_text(state->renderer, state->font_main, title, 100, 100, dark_text);
+
+    if (sm->restore_count == 0) {
+        draw_text(state->renderer, state->font_small, "No se encontraron copias para este juego.", 100, 150, dark_text);
+    } else {
+        for (int i = 0; i < sm->restore_count; i++) {
+            int y = 160 + (i * 50);
+            if (i == sm->restore_selected) {
+                SDL_Rect highlight = {80, y - 5, 1120, 45};
+                SDL_SetRenderDrawColor(state->renderer, 180, 220, 255, 255);
+                SDL_RenderFillRect(state->renderer, &highlight);
+            }
+            draw_text(state->renderer, state->font_small, sm->restore_folders[i], 120, y, dark_text);
+        }
+    }
+
+    SDL_Rect footer = {0, 640, 1280, 80};
+    SDL_SetRenderDrawColor(state->renderer, 20, 60, 90, 255);
+    SDL_RenderFillRect(state->renderer, &footer);
+    draw_text(state->renderer, state->font_small, "(A) Restaurar Seleccionada  (B) Cancelar", 40, 665, white);
+}
+
+void ui_draw_save_options(UIState *state) {
+    ui_draw_restore_menu(state); // Fondo
+    SDL_SetRenderDrawBlendMode(state->renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(state->renderer, 0, 0, 0, 150);
+    SDL_Rect overlay = {0, 0, 1280, 720}; SDL_RenderFillRect(state->renderer, &overlay);
+    SDL_SetRenderDrawBlendMode(state->renderer, SDL_BLENDMODE_NONE);
+
+    SDL_Rect modal = {440, 200, 400, 300};
+    SDL_SetRenderDrawColor(state->renderer, 45, 45, 45, 255); SDL_RenderFillRect(state->renderer, &modal);
+    SDL_SetRenderDrawColor(state->renderer, 0, 255, 255, 255); SDL_RenderDrawRect(state->renderer, &modal);
+
+    SDL_Color white = {255, 255, 255, 255}; SDL_Color cyan = {0, 255, 255, 255};
+    draw_text(state->renderer, state->font_main, "¿Qué quieres hacer?", 460, 220, cyan);
+
+    const char *options[] = {"Restaurar", "Duplicar", "Borrar"};
+    for (int i = 0; i < 3; i++) {
+        int y = 280 + (i * 50);
+        if (i == state->selected_save_option) {
+            SDL_Rect highlight = {450, y - 5, 380, 45};
+            SDL_SetRenderDrawColor(state->renderer, 70, 70, 70, 255); SDL_RenderFillRect(state->renderer, &highlight);
+            draw_text(state->renderer, state->font_main, options[i], 470, y, cyan);
+        } else draw_text(state->renderer, state->font_main, options[i], 470, y, white);
+    }
+    draw_text(state->renderer, state->font_small, "(A) Confirmar  (B) Atrás", 460, 460, white);
+}
+
+void ui_draw_confirm_dialog(UIState *state, const char *action_text) {
+    ui_draw_save_options(state); // Mantener capas visibles
+    SDL_SetRenderDrawBlendMode(state->renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(state->renderer, 0, 0, 0, 180);
+    SDL_Rect overlay = {0, 0, 1280, 720}; SDL_RenderFillRect(state->renderer, &overlay);
+    SDL_SetRenderDrawBlendMode(state->renderer, SDL_BLENDMODE_NONE);
+
+    SDL_Rect modal = {340, 260, 600, 200};
+    SDL_SetRenderDrawColor(state->renderer, 40, 40, 40, 255); SDL_RenderFillRect(state->renderer, &modal);
+    SDL_SetRenderDrawColor(state->renderer, 255, 50, 50, 255); SDL_RenderDrawRect(state->renderer, &modal);
+
+    SDL_Color white = {255, 255, 255, 255}; SDL_Color red = {255, 80, 80, 255};
+    draw_text(state->renderer, state->font_main, "Confirmar acción", 360, 280, red);
+    char question[256]; snprintf(question, sizeof(question), "¿Estás seguro de %s?", action_text);
+    draw_text(state->renderer, state->font_small, question, 360, 330, white);
+    draw_text(state->renderer, state->font_small, "(A) SI, ESTOY SEGURO  (B) CANCELAR", 360, 420, white);
+}
+
+void ui_draw_saves_menu(UIState *state) {
+    SDL_SetRenderDrawColor(state->renderer, 240, 245, 250, 255);
+    SDL_RenderClear(state->renderer);
+    ui_draw_tabs(state);
+    SDL_Color dark_text = {30, 30, 30, 255};
+    SDL_Color white = {255, 255, 255, 255};
+    
+    if (!state->save_mgr || state->save_mgr->count == 0) {
+        draw_text(state->renderer, state->font_main, "No se encontraron datos de guardado.", 100, 150, dark_text);
+    } else {
+        ui_ensure_scroll(&state->browser_scroll_offset, state->selected_item, state->save_mgr->count, 6);
+        int start = state->browser_scroll_offset;
+        
+        // Dibujamos una lista "gorda" con iconos grandes
+        for (int i = 0; i < 6 && (start + i) < state->save_mgr->count; i++) {
+            int idx = start + i;
+            int y = 120 + (i * 85);
+            
+            if (idx == state->selected_item) {
+                SDL_Rect highlight = {40, y - 5, 1200, 80};
+                SDL_SetRenderDrawColor(state->renderer, 180, 220, 255, 255);
+                SDL_RenderFillRect(state->renderer, &highlight);
+            }
+            
+            SaveEntry *e = &state->save_mgr->entries[idx];
+            
+            // Dibujar Carátula del juego (70x70)
+            SDL_Rect icon_rect = {60, y, 70, 70};
+            if (e->icon) {
+                SDL_RenderCopy(state->renderer, e->icon, NULL, &icon_rect);
+            } else if (state->tex_game_icon) {
+                SDL_RenderCopy(state->renderer, state->tex_game_icon, NULL, &icon_rect);
+            }
+            
+            draw_text(state->renderer, state->font_main, e->name, 150, y + 15, dark_text);
+        }
+    }
+
+    // Barra inferior de instrucciones
+    SDL_Rect footer = {0, 640, 1280, 80};
+    SDL_SetRenderDrawColor(state->renderer, 20, 60, 90, 255);
+    SDL_RenderFillRect(state->renderer, &footer);
+    draw_text(state->renderer, state->font_small, "(A) Backup Save  (L/R) Cambiar Pestaña  (+) Salir", 40, 665, white);
 }
 
 void ui_draw_repo_manager(RepositoryManager *manager, UIState *state) {
@@ -303,15 +464,20 @@ void ui_draw_repo_manager(RepositoryManager *manager, UIState *state) {
     if (manager->repo_count == 0) {
         draw_text(state->renderer, state->font_main, "No hay repositorios. Pulsa (X) para añadir.", 100, 200, dark_text);
     } else {
-        for (int i = 0; i < manager->repo_count; i++) {
+        ui_ensure_scroll(&state->browser_scroll_offset, state->selected_repo, manager->repo_count, 8);
+        int start = state->browser_scroll_offset;
+        int visible_count = 8; // Ajustado para mostrar más repositorios
+
+        for (int i = 0; i < visible_count && (start + i) < manager->repo_count; i++) {
+            int idx = start + i;
             int y = 120 + (i * 60);
-            if (i == state->selected_repo) {
+            if (idx == state->selected_repo) {
                 SDL_Rect highlight = {80, y - 5, 1120, 50};
                 SDL_SetRenderDrawColor(state->renderer, 180, 220, 255, 255);
                 SDL_RenderFillRect(state->renderer, &highlight);
             }
-            draw_text(state->renderer, state->font_main, manager->repositories[i].name, 120, y, dark_text);
-            draw_text(state->renderer, state->font_small, manager->repositories[i].download_path, 700, y + 10, dark_text);
+            draw_text(state->renderer, state->font_main, manager->repositories[idx].name, 120, y, dark_text);
+            draw_text(state->renderer, state->font_small, manager->repositories[idx].download_path, 700, y + 10, dark_text);
         }
     }
 }
@@ -371,7 +537,7 @@ void ui_draw_path_picker(UIState *state, AppConfig *config) {
         int count = path_navigator_get_entry_count(state->path_nav);
         char **entries = path_navigator_get_entries(state->path_nav);
 
-        ui_ensure_scroll(&state->path_scroll_offset, state->path_nav->selected_entry, count);
+        ui_ensure_scroll(&state->path_scroll_offset, state->path_nav->selected_entry, count, 11);
         
         for (int i = 0; i < 11 && (state->path_scroll_offset + i) < count; i++) {
             int idx = state->path_scroll_offset + i;

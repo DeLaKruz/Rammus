@@ -9,6 +9,7 @@
 #include "repository.h"
 #include "ui.h"
 #include "config.h"
+#include "main.h" // Para ensure_sdmc_mounted
 #include "archive_org.h"
 
 int ensure_sdmc_mounted(void) {
@@ -106,10 +107,19 @@ int main(int argc, char **argv)
     // Cargar Fuentes y Texturas desde las nuevas rutas de romfs
     ui_state->font_main = TTF_OpenFont("romfs:/font/font.ttf", 30); // Un poco más grande para legibilidad
     ui_state->font_small = TTF_OpenFont("romfs:/font/font.ttf", 20);
+    ui_state->tex_logo = IMG_LoadTexture(renderer, "romfs:/img/logoapp.png");
     ui_state->tex_repo = IMG_LoadTexture(renderer, "romfs:/img/repo.png");
     ui_state->tex_folder = IMG_LoadTexture(renderer, "romfs:/img/folder.png");
     ui_state->tex_file = IMG_LoadTexture(renderer, "romfs:/img/file.png");
     ui_state->tex_link = IMG_LoadTexture(renderer, "romfs:/img/link.png");
+    ui_state->tex_game_icon = IMG_LoadTexture(renderer, "romfs:/img/game_icon.png"); // Cargar nueva textura
+
+    // Establecer el icono de la ventana (para entornos que lo soporten)
+    SDL_Surface *icon_surface = IMG_Load("romfs:/img/logoapp.png");
+    if (icon_surface) {
+        SDL_SetWindowIcon(window, icon_surface);
+        SDL_FreeSurface(icon_surface);
+    }
 
     // Solo cerramos si falta la fuente, que es vital. Las texturas pueden fallar.
     if (!ui_state->font_main || !ui_state->font_small) {
@@ -120,6 +130,8 @@ int main(int argc, char **argv)
         if (ui_state->tex_folder) SDL_DestroyTexture(ui_state->tex_folder);
         if (ui_state->tex_file) SDL_DestroyTexture(ui_state->tex_file);
         if (ui_state->tex_link) SDL_DestroyTexture(ui_state->tex_link);
+        if (ui_state->tex_logo) SDL_DestroyTexture(ui_state->tex_logo);
+        if (ui_state->tex_game_icon) SDL_DestroyTexture(ui_state->tex_game_icon);
         
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
@@ -157,6 +169,17 @@ int main(int argc, char **argv)
     {
         padUpdate(&pad);
         UIInput input = ui_handle_input(&pad);
+        u64 kDown = padGetButtonsDown(&pad);
+
+        // Cambiar de usuario con ZL / ZR
+        if ((kDown & HidNpadButton_ZL) || (kDown & HidNpadButton_ZR)) {
+            int dir = (kDown & HidNpadButton_ZR) ? 1 : -1;
+            ui_state->save_mgr->current_user_index = (ui_state->save_mgr->current_user_index + dir + ui_state->save_mgr->user_count) % ui_state->save_mgr->user_count;
+            if (ui_state->active_tab == 1) {
+                save_manager_rescan(ui_state->save_mgr, ui_state->renderer);
+                ui_state->selected_item = 0;
+            }
+        }
 
         // Limpiar pantalla con color de fondo (Gris oscuro estilo Goldleaf)
         SDL_SetRenderDrawColor(renderer, 45, 45, 45, 255);
@@ -174,13 +197,16 @@ int main(int argc, char **argv)
         }
 
         // Lógica de cambio de Pestaña Superior (Corregida)
-        if (ui_state->mode == UI_MODE_MAIN || ui_state->mode == UI_MODE_SETTINGS || ui_state->mode == UI_MODE_FUTURE) {
+        if (ui_state->mode == UI_MODE_MAIN || ui_state->mode == UI_MODE_SETTINGS || ui_state->mode == UI_MODE_COPIAS) {
             if (input.action == UI_ACTION_TAB_LEFT) {
                     ui_state->active_tab = (ui_state->active_tab == 0) ? 2 : ui_state->active_tab - 1;
                 // Sincronizar el Modo con la Pestaña activa
-                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN;
-                else if (ui_state->active_tab == 1) ui_state->mode = UI_MODE_FUTURE;
-                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS;
+                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN; // Repositorios
+                else if (ui_state->active_tab == 1) {
+                    ui_state->mode = UI_MODE_COPIAS; // Copias
+                    save_manager_rescan(ui_state->save_mgr, ui_state->renderer);
+                }
+                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS; // Ajustes
             
                 ui_state->selected_repo = 0;
                 ui_state->selected_item = 0;
@@ -188,9 +214,12 @@ int main(int argc, char **argv)
             } else if (input.action == UI_ACTION_TAB_RIGHT) {
                     ui_state->active_tab = (ui_state->active_tab == 2) ? 0 : ui_state->active_tab + 1;
                 // Sincronizar el Modo con la Pestaña activa
-                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN;
-                else if (ui_state->active_tab == 1) ui_state->mode = UI_MODE_FUTURE;
-                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS;
+                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN; // Repositorios
+                else if (ui_state->active_tab == 1) {
+                    ui_state->mode = UI_MODE_COPIAS; // Copias
+                    save_manager_rescan(ui_state->save_mgr, ui_state->renderer);
+                }
+                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS; // Ajustes
             
                 ui_state->selected_repo = 0;
                 ui_state->selected_item = 0;
@@ -232,10 +261,28 @@ int main(int argc, char **argv)
                 ui_draw_main_menu(manager, ui_state, config);
                 break;
             }
-            case UI_MODE_FUTURE: {
-                ui_draw_tabs(ui_state);
-                SDL_Color white = {255, 255, 255, 255};
-                draw_text(ui_state->renderer, ui_state->font_main, "Esta sección estará disponible en el futuro.", 100, 200, white);
+            case UI_MODE_COPIAS: { // Nueva pestaña "Copias"
+                if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) { // Bajar
+                        if (ui_state->save_mgr->count > 0)
+                            ui_state->selected_item = (ui_state->selected_item + 1) % ui_state->save_mgr->count;
+                    } else if (input.param == -1) { // Arriba
+                        if (ui_state->save_mgr->count > 0)
+                            ui_state->selected_item = (ui_state->selected_item - 1 + ui_state->save_mgr->count) % ui_state->save_mgr->count;
+                    } else if (input.param == 0 && ui_state->save_mgr->count > 0) { // Botón A
+                        SaveEntry *selected = &ui_state->save_mgr->entries[ui_state->selected_item];
+                        if (save_manager_backup(selected, config_get_save_backup_path(config), ui_state) == 0) {
+                            snprintf(ui_state->message, sizeof(ui_state->message), "Backup de %.200s finalizado.", selected->name);
+                        } else {
+                            snprintf(ui_state->message, sizeof(ui_state->message), "Error en backup.");
+                        }
+                        ui_state->show_message = 1;
+                    }
+                } else if (input.action == UI_ACTION_SET_PATH && ui_state->save_mgr->count > 0) { // Botón Y
+                    save_manager_prepare_restore(ui_state->save_mgr, ui_state->selected_item, config_get_save_backup_path(config));
+                    ui_state->mode = UI_MODE_RESTORE_MENU;
+                }
+                ui_draw_saves_menu(ui_state);
                 break;
             }
             case UI_MODE_BROWSER: {
@@ -291,7 +338,16 @@ int main(int argc, char **argv)
                                 if (strcmp(ui_state->current_path, "/") == 0) {
                                     snprintf(ui_state->current_path, sizeof(ui_state->current_path), "/%s", selected->name);
                                 } else {
-                                    snprintf(ui_state->current_path, sizeof(ui_state->current_path), "%s/%s", old_path, selected->name);
+                                    // Construir la ruta en pasos para evitar el warning de truncamiento de snprintf
+                                    size_t current_len = strlen(old_path);
+                                    // Añadir el separador '/' si hay espacio
+                                    if (current_len < sizeof(ui_state->current_path) - 1) {
+                                        ui_state->current_path[current_len] = '/';
+                                        ui_state->current_path[current_len + 1] = '\0';
+                                        current_len++;
+                                    }
+                                    // Añadir el nombre del archivo/carpeta, asegurándose de que quepa en el espacio restante
+                                    snprintf(ui_state->current_path + current_len, sizeof(ui_state->current_path) - current_len, "%s", selected->name);
                                 }
 
                                 if (archive_org_list_files(current_repo->id, ui_state->current_path, current_repo) != 0) {
@@ -331,9 +387,21 @@ int main(int argc, char **argv)
             }
             case UI_MODE_SETTINGS: {
                 if (input.action == UI_ACTION_SELECT) {
-                    if (input.param == 0) {
+                    if (input.param == 1) { // Bajar
+                        ui_state->selected_setting = (ui_state->selected_setting + 1) % 2;
+                    } else if (input.param == -1) { // Subir
+                        ui_state->selected_setting = (ui_state->selected_setting - 1 + 2) % 2;
+                    } else if (input.param == 0) { // Botón A (Confirmar)
+                        if (ui_state->selected_setting == 0) {
+                        // Gestionar repositorios
                         ui_state->mode = UI_MODE_REPO_MANAGER;
                         ui_state->selected_repo = 0;
+                        } else if (ui_state->selected_setting == 1) {
+                        // Elegir carpeta de destino de copias de juegos
+                        ui_state->is_creating_new = 0; // No estamos creando un repo, solo editando una ruta global
+                        ui_state->path_nav = path_navigator_create(config_get_save_backup_path(config));
+                        ui_state->mode = UI_MODE_SAVE_PATH_PICKER;
+                        }
                     }
                 }
                 ui_draw_settings_menu(ui_state, config);
@@ -469,6 +537,99 @@ int main(int argc, char **argv)
                 ui_draw_path_picker(ui_state, config);
                 break;
             }
+            case UI_MODE_SAVE_PATH_PICKER: { // Nuevo modo para elegir ruta de saves
+                if (input.action == UI_ACTION_BACK) {
+                    ui_state->mode = UI_MODE_SETTINGS;
+                    if (ui_state->path_nav) {
+                        path_navigator_destroy(ui_state->path_nav);
+                        ui_state->path_nav = NULL;
+                    }
+                } else if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) {
+                        if (ui_state->path_nav) {
+                            path_navigator_move_selection(ui_state->path_nav, 1);
+                        }
+                    } else if (input.param == -1) {
+                        if (ui_state->path_nav) {
+                            path_navigator_move_selection(ui_state->path_nav, -1);
+                        }
+                    } else if (input.param == 0) {
+                        if (ui_state->path_nav) {
+                            const char *entry = path_navigator_get_selected_entry(ui_state->path_nav);
+                            if (entry) {
+                                if (strcmp(entry, "..") == 0) {
+                                    path_navigator_go_back(ui_state->path_nav);
+                                } else {
+                                    path_navigator_enter_folder(ui_state->path_nav, entry);
+                                }
+                            }
+                        }
+                    }
+                } else if (input.action == UI_ACTION_SET_PATH) {
+                    if (ui_state->path_nav) {
+                        config_set_save_backup_path(config, path_navigator_get_current(ui_state->path_nav));
+                        config_save(config);
+                        ui_state->mode = UI_MODE_SETTINGS;
+                        path_navigator_destroy(ui_state->path_nav);
+                        ui_state->path_nav = NULL;
+                    }
+                }
+                ui_draw_path_picker(ui_state, config);
+                break;
+            }
+            case UI_MODE_RESTORE_MENU: {
+                if (input.action == UI_ACTION_BACK) {
+                    ui_state->mode = UI_MODE_COPIAS;
+                } else if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) { // Bajar
+                        ui_state->save_mgr->restore_selected = (ui_state->save_mgr->restore_selected + 1) % ui_state->save_mgr->restore_count;
+                    } else if (input.param == -1) { // Arriba
+                        ui_state->save_mgr->restore_selected = (ui_state->save_mgr->restore_selected - 1 + ui_state->save_mgr->restore_count) % ui_state->save_mgr->restore_count;
+                    } else if (input.param == 0 && ui_state->save_mgr->restore_count > 0) {
+                        char safe_root[PATH_MAX];
+                        consolidate_path(config_get_save_backup_path(config), safe_root, sizeof(safe_root));
+                        char game_name_clean[PATH_MAX]; strcpy(game_name_clean, ui_state->save_mgr->restore_entry->name);
+                        for(char *p = game_name_clean; *p; p++) if (strchr(":*?\"<>|", *p)) *p = '_';
+                        snprintf(ui_state->target_save_path, sizeof(ui_state->target_save_path), "%s/%s/%s", 
+                                 safe_root, game_name_clean, 
+                                 ui_state->save_mgr->restore_folders[ui_state->save_mgr->restore_selected]);
+                        ui_state->selected_save_option = 0; ui_state->mode = UI_MODE_SAVE_OPTIONS;
+                    }
+                }
+                ui_draw_restore_menu(ui_state);
+                break;
+            }
+            case UI_MODE_SAVE_OPTIONS: {
+                if (input.action == UI_ACTION_BACK) ui_state->mode = UI_MODE_RESTORE_MENU;
+                else if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) ui_state->selected_save_option = (ui_state->selected_save_option + 1) % 3;
+                    else if (input.param == -1) ui_state->selected_save_option = (ui_state->selected_save_option + 2) % 3;
+                    else if (input.param == 0) { ui_state->pending_action = ui_state->selected_save_option; ui_state->mode = UI_MODE_CONFIRM_ACTION; }
+                }
+                ui_draw_save_options(ui_state); break;
+            }
+            case UI_MODE_CONFIRM_ACTION: {
+                const char *actions[] = {"restaurar", "duplicar", "borrar"};
+                if (input.action == UI_ACTION_BACK) ui_state->mode = UI_MODE_SAVE_OPTIONS;
+                else if (input.action == UI_ACTION_SELECT && input.param == 0) {
+                    if (ui_state->pending_action == 0) { 
+                        save_manager_restore(ui_state->save_mgr->restore_entry, ui_state->target_save_path, ui_state);
+                        strcpy(ui_state->message, "Restauración finalizada."); ui_state->mode = UI_MODE_COPIAS;
+                    } else if (ui_state->pending_action == 1) { 
+                        save_manager_duplicate_backup(ui_state->target_save_path);
+                        strcpy(ui_state->message, "Copia duplicada con éxito.");
+                        save_manager_prepare_restore(ui_state->save_mgr, ui_state->selected_item, config_get_save_backup_path(config));
+                        ui_state->mode = UI_MODE_RESTORE_MENU;
+                    } else if (ui_state->pending_action == 2) { 
+                        save_manager_delete_backup(ui_state->target_save_path);
+                        strcpy(ui_state->message, "Copia eliminada.");
+                        save_manager_prepare_restore(ui_state->save_mgr, ui_state->selected_item, config_get_save_backup_path(config));
+                        ui_state->mode = UI_MODE_RESTORE_MENU;
+                    }
+                    ui_state->show_message = 1;
+                }
+                ui_draw_confirm_dialog(ui_state, actions[ui_state->pending_action]); break;
+            }
             default: {
                 ui_state->mode = UI_MODE_MAIN;
                 break;
@@ -489,6 +650,8 @@ int main(int argc, char **argv)
     SDL_DestroyTexture(ui_state->tex_folder);
     SDL_DestroyTexture(ui_state->tex_file);
     SDL_DestroyTexture(ui_state->tex_link);
+    if (ui_state->tex_logo) SDL_DestroyTexture(ui_state->tex_logo);
+    SDL_DestroyTexture(ui_state->tex_game_icon); // Destruir nueva textura
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     romfsExit();

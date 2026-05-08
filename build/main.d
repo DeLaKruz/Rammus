@@ -178,6 +178,7 @@ main.o: C:/devkitPro/Rammus/source/main.c \
  C:/devkitPro/Rammus/include/path_navigator.h \
  C:/devkitPro/Rammus/include/config.h \
  C:/devkitPro/Rammus/include/downloader.h \
+ C:/devkitPro/Rammus/include/save_manager.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_main.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_stdinc.h \
@@ -231,7 +232,7 @@ main.o: C:/devkitPro/Rammus/source/main.c \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_image.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL.h \
  C:/devkitPro/portlibs/switch/include/SDL2/SDL_ttf.h \
- C:/devkitPro/Rammus/include/config.h \
+ C:/devkitPro/Rammus/include/config.h C:/devkitPro/Rammus/include/main.h \
  C:/devkitPro/Rammus/include/archive_org.h \
  C:/devkitPro/Rammus/include/ui.h
 C:/devkitPro/libnx/include/switch.h:
@@ -413,6 +414,7 @@ C:/devkitPro/Rammus/include/repository.h:
 C:/devkitPro/Rammus/include/path_navigator.h:
 C:/devkitPro/Rammus/include/config.h:
 C:/devkitPro/Rammus/include/downloader.h:
+C:/devkitPro/Rammus/include/save_manager.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL_main.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL_stdinc.h:
@@ -467,5 +469,6 @@ C:/devkitPro/portlibs/switch/include/SDL2/SDL_image.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL.h:
 C:/devkitPro/portlibs/switch/include/SDL2/SDL_ttf.h:
 C:/devkitPro/Rammus/include/config.h:
+C:/devkitPro/Rammus/include/main.h:
 C:/devkitPro/Rammus/include/archive_org.h:
 C:/devkitPro/Rammus/include/ui.h:

@@ -88,7 +88,11 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
         SDL_SetRenderDrawColor(progress_data->ui_state->renderer, 45, 45, 45, 255);
         SDL_RenderClear(progress_data->ui_state->renderer);
         
-        if (progress_data->ui_state->mode == UI_MODE_BROWSER) {
+        if (progress_data->ui_state->mode == UI_MODE_COPIAS) { // Redibujar la UI de saves si estamos en ese modo
+            ui_draw_saves_menu(progress_data->ui_state);
+        } else if (progress_data->ui_state->mode == UI_MODE_SAVE_PATH_PICKER) {
+            ui_draw_path_picker(progress_data->ui_state, progress_data->config);
+        } else if (progress_data->ui_state->mode == UI_MODE_BROWSER) {
             Repository *repo = repository_get(progress_data->repo_manager, progress_data->ui_state->selected_repo);
             ui_draw_repository_browser(repo, progress_data->ui_state, progress_data->config);
         } else {
