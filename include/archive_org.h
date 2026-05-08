@@ -1,6 +1,8 @@
 #ifndef ARCHIVE_ORG_H
 #define ARCHIVE_ORG_H
 
+#include "ui.h" // For UIState
+#include "config.h"
 #include "repository.h"
 #include <switch.h>
 
@@ -23,10 +25,9 @@ int archive_org_search(const char *url, ArchiveOrgResponse *response);
 int archive_org_list_files(const char *base_url, const char *path, Repository *repo);
 
 // Descargar archivo desde URL
-int archive_org_download_file(const char *base_url, const char *filename, const char *output_path);
+int archive_org_download_file(const char *base_url, const char *filename, const char *output_path, UIState *ui_state, RepositoryManager *manager, AppConfig *config);
 
 // Funciones HTTP básicas
 int http_get(const char *url, char **response, size_t *response_size);
-int http_download_file(const char *url, const char *output_path);
 
 #endif

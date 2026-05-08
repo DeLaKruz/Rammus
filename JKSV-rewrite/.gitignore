@@ -1,0 +1,19 @@
+build/
+.vscode/
+*.cbp
+*.layout
+
+.idea/
+cmake-build-debug/
+
+# build artifacts
+JKSV.elf
+JKSV.lst
+JKSV.nacp
+JKSV.nro
+JKSV.nso
+JKSV.pfs0
+
+#sometimes I give jksv to people and forget about this.
+JKSV.zip
+JKSV.nro.zip

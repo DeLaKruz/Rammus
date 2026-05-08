@@ -25,7 +25,7 @@ void config_set_download_path(AppConfig *config, const char *path);
 const char* config_get_download_path(AppConfig *config);
 
 // Gestión de repositorios personalizados
-void config_add_custom_repo(AppConfig *config, const char *name, const char *archive_url);
+void config_add_custom_repo(AppConfig *config, const char *name, const char *archive_url, const char *download_path);
 Repository* config_get_custom_repo(AppConfig *config, int index);
 int config_get_repo_count(AppConfig *config);
 void config_remove_custom_repo(AppConfig *config, int index);

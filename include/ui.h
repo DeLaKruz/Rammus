@@ -6,6 +6,9 @@
 #include "path_navigator.h"
 #include "config.h"
 #include "downloader.h"
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 
 typedef enum {
     UI_MODE_MAIN,
@@ -14,15 +17,29 @@ typedef enum {
     UI_MODE_PATH_PICKER,
     UI_MODE_ADD_REPO_URL,
     UI_MODE_ADD_REPO_NAME,
-    UI_MODE_DOWNLOAD_INFO
+    UI_MODE_DOWNLOAD_INFO,
+    UI_MODE_FUTURE,
+    UI_MODE_REPO_MANAGER,   // Nuevo: Lista de gestión
+    UI_MODE_REPO_SUBMENU    // Nuevo: Opciones de un repo (Editar/Borrar)
 } UIMode;
 
 typedef struct {
     UIMode mode;
+    SDL_Renderer *renderer;
+    TTF_Font *font_main;
+    TTF_Font *font_small;
+    
+    SDL_Texture *tex_repo;
+    SDL_Texture *tex_folder;
+    SDL_Texture *tex_file;
+    SDL_Texture *tex_link;
+    SDL_Texture *tex_settings;
+
+    int active_tab; // 0: Repos, 1: Futuro, 2: Ajustes
     int selected_repo;
     int selected_item;
     int selected_setting;
-    char current_path[1024];
+    char current_path[4096]; // Increased size to silence truncation warnings and accommodate deep paths
     char new_repo_url[512];
     char new_repo_name[128];
     char message[256];
@@ -30,8 +47,15 @@ typedef struct {
     PathNavigator *path_nav;
     int browser_scroll_offset;
     int path_scroll_offset;
-    DownloadProgress download_progress;
+    
+    // Progreso de descarga
     int is_downloading;
+    double download_progress; // 0.0 a 1.0
+    char download_status[128];
+
+    // Estado de edición
+    int editing_repo_index; // Índice del repo que estamos editando en el manager
+    int is_creating_new;    // Flag para saber si estamos en flujo de creación
 } UIState;
 
 typedef struct {
@@ -46,7 +70,11 @@ typedef struct {
 #define UI_ACTION_SETTINGS 4
 #define UI_ACTION_SET_PATH 5
 #define UI_ACTION_NEW_FOLDER 6
+#define UI_ACTION_TAB_LEFT 7
+#define UI_ACTION_TAB_RIGHT 8
 
+void draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color);
+void ui_draw_tabs(UIState *state);
 UIState* ui_state_create(void);
 void ui_state_destroy(UIState *state);
 UIInput ui_handle_input(PadState *pad);
@@ -55,6 +83,9 @@ void ui_draw_main_menu(RepositoryManager *manager, UIState *state, AppConfig *co
 void ui_draw_repository_browser(Repository *repo, UIState *state, AppConfig *config);
 void ui_draw_settings_menu(UIState *state, AppConfig *config);
 void ui_draw_path_picker(UIState *state, AppConfig *config);
+void ui_draw_progress(UIState *state);
 void ui_draw_message(UIState *state);
+void ui_draw_repo_manager(RepositoryManager *manager, UIState *state);
+void ui_draw_repo_submenu(Repository *repo, UIState *state);
 
 #endif

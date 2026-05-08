@@ -23,7 +23,7 @@ void repository_manager_destroy(RepositoryManager *manager) {
     }
 }
 
-void repository_add(RepositoryManager *manager, const char *name, const char *id) {
+void repository_add(RepositoryManager *manager, const char *name, const char *id, const char *download_path) {
     if (!manager || !name || !id) return;
     
     Repository *new_repos = (Repository*)realloc(manager->repositories, 
@@ -38,6 +38,9 @@ void repository_add(RepositoryManager *manager, const char *name, const char *id
         strncpy(repo->id, id, sizeof(repo->id) - 1);
         repo->id[sizeof(repo->id) - 1] = '\0';
         
+        strncpy(repo->download_path, download_path, sizeof(repo->download_path) - 1);
+        repo->download_path[sizeof(repo->download_path) - 1] = '\0';
+
         repo->item_count = 0;
         repo->items = NULL;
         

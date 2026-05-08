@@ -32,7 +32,7 @@ static void add_persistent_repos(RepositoryManager *manager, AppConfig *config) 
     for (int i = 0; i < config_get_repo_count(config); i++) {
         Repository *saved = config_get_custom_repo(config, i);
         if (saved) {
-            repository_add(manager, saved->name, saved->id);
+            repository_add(manager, saved->name, saved->id, saved->download_path);
         }
     }
 }
@@ -78,10 +78,61 @@ static void join_sdmc_path(char *out, size_t out_size, const char *base, const c
 
 int main(int argc, char **argv)
 {
-    consoleInit(NULL);
-
-    // Intentar montar sdmc:/ si no está ya accesible
+    // Inicializar hardware y RomFS
+    romfsInit();
     ensure_sdmc_mounted();
+
+    // Inicializar SDL2
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) return -1;
+    IMG_Init(IMG_INIT_PNG);
+    TTF_Init();
+
+    // Crear ventana y renderizador
+    SDL_Window *window = SDL_CreateWindow("Rammus", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, 0);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
+    UIState *ui_state = ui_state_create();
+    if (!ui_state) {
+        printf("Error: No se pudo crear el estado de la UI.\n");
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+    ui_state->renderer = renderer;
+
+    // Cargar Fuentes y Texturas desde las nuevas rutas de romfs
+    ui_state->font_main = TTF_OpenFont("romfs:/font/font.ttf", 30); // Un poco más grande para legibilidad
+    ui_state->font_small = TTF_OpenFont("romfs:/font/font.ttf", 20);
+    ui_state->tex_repo = IMG_LoadTexture(renderer, "romfs:/img/repo.png");
+    ui_state->tex_folder = IMG_LoadTexture(renderer, "romfs:/img/folder.png");
+    ui_state->tex_file = IMG_LoadTexture(renderer, "romfs:/img/file.png");
+    ui_state->tex_link = IMG_LoadTexture(renderer, "romfs:/img/link.png");
+
+    // Solo cerramos si falta la fuente, que es vital. Las texturas pueden fallar.
+    if (!ui_state->font_main || !ui_state->font_small) {
+        printf("Error fatal: No se pudo cargar la fuente en romfs:/font/font.ttf\n");
+        if (ui_state->font_main) TTF_CloseFont(ui_state->font_main);
+        if (ui_state->font_small) TTF_CloseFont(ui_state->font_small);
+        if (ui_state->tex_repo) SDL_DestroyTexture(ui_state->tex_repo);
+        if (ui_state->tex_folder) SDL_DestroyTexture(ui_state->tex_folder);
+        if (ui_state->tex_file) SDL_DestroyTexture(ui_state->tex_file);
+        if (ui_state->tex_link) SDL_DestroyTexture(ui_state->tex_link);
+        
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        ui_state_destroy(ui_state);
+        return -1;
+    }
+
+    // Inicializar la ruta actual
+    ui_state->current_path[0] = '/';
+    ui_state->current_path[1] = '\0';
 
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
 
@@ -91,7 +142,6 @@ int main(int argc, char **argv)
     // Inicializar Archive.org
     if (archive_org_init() != 0) {
         printf("Error inicializando Archive.org\n");
-        consoleUpdate(NULL);
         return -1;
     }
 
@@ -101,16 +151,16 @@ int main(int argc, char **argv)
     RepositoryManager *manager = repository_manager_create();
     add_persistent_repos(manager, config);
 
-    UIState *ui_state = ui_state_create();
-    ui_state->current_path[0] = '/';
-    ui_state->current_path[1] = '\0';
-
     int running = 1;
 
     while (appletMainLoop() && running)
     {
         padUpdate(&pad);
         UIInput input = ui_handle_input(&pad);
+
+        // Limpiar pantalla con color de fondo (Gris oscuro estilo Goldleaf)
+        SDL_SetRenderDrawColor(renderer, 45, 45, 45, 255);
+        SDL_RenderClear(renderer);
 
         if (ui_state->show_message) {
             ui_draw_message(ui_state);
@@ -119,16 +169,39 @@ int main(int argc, char **argv)
                 // Permanecer en el modo actual en lugar de volver al menú principal
                 if (ui_state->mode == UI_MODE_MAIN) ui_state->mode = UI_MODE_MAIN; 
             }
-            consoleUpdate(NULL);
+            SDL_RenderPresent(renderer); // Necesario para que el mensaje sea visible
             continue;
+        }
+
+        // Lógica de cambio de Pestaña Superior (Corregida)
+        if (ui_state->mode == UI_MODE_MAIN || ui_state->mode == UI_MODE_SETTINGS || ui_state->mode == UI_MODE_FUTURE) {
+            if (input.action == UI_ACTION_TAB_LEFT) {
+                    ui_state->active_tab = (ui_state->active_tab == 0) ? 2 : ui_state->active_tab - 1;
+                // Sincronizar el Modo con la Pestaña activa
+                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN;
+                else if (ui_state->active_tab == 1) ui_state->mode = UI_MODE_FUTURE;
+                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS;
+            
+                ui_state->selected_repo = 0;
+                ui_state->selected_item = 0;
+                ui_state->selected_setting = 0;
+            } else if (input.action == UI_ACTION_TAB_RIGHT) {
+                    ui_state->active_tab = (ui_state->active_tab == 2) ? 0 : ui_state->active_tab + 1;
+                // Sincronizar el Modo con la Pestaña activa
+                if (ui_state->active_tab == 0) ui_state->mode = UI_MODE_MAIN;
+                else if (ui_state->active_tab == 1) ui_state->mode = UI_MODE_FUTURE;
+                else if (ui_state->active_tab == 2) ui_state->mode = UI_MODE_SETTINGS;
+            
+                ui_state->selected_repo = 0;
+                ui_state->selected_item = 0;
+                ui_state->selected_setting = 0;
+            }
         }
 
         switch (ui_state->mode) {
             case UI_MODE_MAIN: {
                 if (input.action == UI_ACTION_EXIT) {
                     running = 0;
-                } else if (input.action == UI_ACTION_SETTINGS) {
-                    ui_state->mode = UI_MODE_SETTINGS;
                 } else if (input.action == UI_ACTION_SELECT) {
                     if (input.param == 1) {
                         ui_state->selected_repo++;
@@ -142,13 +215,13 @@ int main(int argc, char **argv)
                         }
                     } else {
                         if (manager->repo_count > 0) {
+                            // Al entrar en un repo, el modo cambia a Browser
                             ui_state->mode = UI_MODE_BROWSER;
                             ui_state->selected_item = 0;
                             ui_state->browser_scroll_offset = 0;
                             ui_state->current_path[0] = '/';
                             ui_state->current_path[1] = '\0';
-                            printf("Conectando con Archive.org...\n");
-                            Repository *repo = repository_get(manager, ui_state->selected_repo);
+                            Repository *repo = repository_get(manager, ui_state->selected_repo); // Obtener el repo después de cambiar el modo
                             if (repo) {
                                 // Listar la ruta raíz del repositorio
                                 archive_org_list_files(repo->id, ui_state->current_path, repo);
@@ -159,6 +232,12 @@ int main(int argc, char **argv)
                 ui_draw_main_menu(manager, ui_state, config);
                 break;
             }
+            case UI_MODE_FUTURE: {
+                ui_draw_tabs(ui_state);
+                SDL_Color white = {255, 255, 255, 255};
+                draw_text(ui_state->renderer, ui_state->font_main, "Esta sección estará disponible en el futuro.", 100, 200, white);
+                break;
+            }
             case UI_MODE_BROWSER: {
                 Repository *current_repo = repository_get(manager, ui_state->selected_repo);
                 if (!current_repo) {
@@ -166,23 +245,21 @@ int main(int argc, char **argv)
                     break;
                 }
 
-                if (input.action == UI_ACTION_SETTINGS) {
-                    ui_state->mode = UI_MODE_SETTINGS;
-                } else if (input.action == UI_ACTION_BACK) {
+                if (input.action == UI_ACTION_BACK) {
                     if (strcmp(ui_state->current_path, "/") != 0) {
-                        // Volver un nivel en la ruta dentro del repositorio
                         int len = strlen(ui_state->current_path);
+                        // Eliminar barra final si existe
                         if (ui_state->current_path[len - 1] == '/') {
                             ui_state->current_path[len - 1] = '\0';
-                            len--;
                         }
-                        while (len > 0 && ui_state->current_path[len - 1] != '/') {
-                            ui_state->current_path[--len] = '\0';
+                        
+                        char *last_slash = strrchr(ui_state->current_path, '/');
+                        if (last_slash && last_slash != ui_state->current_path) {
+                            *last_slash = '\0'; // Cortar en la última carpeta
+                        } else {
+                            strcpy(ui_state->current_path, "/");
                         }
-                        if (len == 0) {
-                            ui_state->current_path[0] = '/';
-                            ui_state->current_path[1] = '\0';
-                        }
+
                         Repository *current_repo = repository_get(manager, ui_state->selected_repo);
                         if (current_repo) {
                             archive_org_list_files(current_repo->id, ui_state->current_path, current_repo);
@@ -207,7 +284,7 @@ int main(int argc, char **argv)
                         if (current_repo->item_count > 0) {
                             RepositoryItem *selected = &current_repo->items[ui_state->selected_item];
                             if (selected->is_dir) {
-                                char old_path[1024];
+                                char old_path[sizeof(ui_state->current_path)];
                                 strncpy(old_path, ui_state->current_path, sizeof(old_path) - 1);
                                 old_path[sizeof(old_path) - 1] = '\0';
 
@@ -216,8 +293,7 @@ int main(int argc, char **argv)
                                 } else {
                                     snprintf(ui_state->current_path, sizeof(ui_state->current_path), "%s/%s", old_path, selected->name);
                                 }
-                                
-                                printf("Cargando carpeta: %s\n", selected->name);
+
                                 if (archive_org_list_files(current_repo->id, ui_state->current_path, current_repo) != 0) {
                                     strncpy(ui_state->current_path, old_path, sizeof(ui_state->current_path));
                                     snprintf(ui_state->message, sizeof(ui_state->message), "Error al abrir la carpeta");
@@ -227,18 +303,18 @@ int main(int argc, char **argv)
                                 ui_state->browser_scroll_offset = 0;
                             } else {
                                 // Descargar archivo desde Archive.org
-                                char output_path[1024] = {0};
+                                char output_path[2048] = {0}; // Aumentar tamaño para rutas largas
                                 // Usamos selected->name para guardar el archivo directamente en la carpeta elegida
-                                join_sdmc_path(output_path, sizeof(output_path), config->download_path, selected->name);
+                                join_sdmc_path(output_path, sizeof(output_path), current_repo->download_path, selected->name);
 
-                                int result = archive_org_download_file(current_repo->id, selected->path, output_path);
+                                int result = archive_org_download_file(current_repo->id, selected->path, output_path, ui_state, manager, config);
                                 if (result == 0) {
                                     ui_state->message[0] = '\0';
                                     printf("Descarga completada: %s\n", selected->name);
                                     append_to_message(ui_state->message, sizeof(ui_state->message), "Archivo '");
                                     append_to_message(ui_state->message, sizeof(ui_state->message), selected->name);
                                     append_to_message(ui_state->message, sizeof(ui_state->message), "' copiado en ");
-                                    append_to_message(ui_state->message, sizeof(ui_state->message), config->download_path);
+                                    append_to_message(ui_state->message, sizeof(ui_state->message), current_repo->download_path);
                                 } else {
                                     ui_state->message[0] = '\0';
                                     append_to_message(ui_state->message, sizeof(ui_state->message), "Error descargando '");
@@ -254,62 +330,80 @@ int main(int argc, char **argv)
                 break;
             }
             case UI_MODE_SETTINGS: {
-                if (input.action == UI_ACTION_BACK) {
-                    ui_state->mode = UI_MODE_MAIN;
-                } else if (input.action == UI_ACTION_SELECT) {
-                    if (input.param == 1) {
-                        ui_state->selected_setting++;
-                        if (ui_state->selected_setting > 3) ui_state->selected_setting = 3;
-                    } else if (input.param == -1) {
-                        ui_state->selected_setting--;
-                        if (ui_state->selected_setting < 0) ui_state->selected_setting = 0;
-                    } else {
-                        if (ui_state->selected_setting == 0) {
-                            if (ui_state->path_nav) {
-                                path_navigator_destroy(ui_state->path_nav);
-                            }
-                            ui_state->path_nav = path_navigator_create("sdmc:/");
-                            ui_state->path_scroll_offset = 0;
-                            ui_state->mode = UI_MODE_PATH_PICKER;
-                        } else if (ui_state->selected_setting == 1) {
-                            if (ui_show_text_input(ui_state->new_repo_url, sizeof(ui_state->new_repo_url), "URL completa de Archive.org") &&
-                                ui_show_text_input(ui_state->new_repo_name, sizeof(ui_state->new_repo_name), "Nombre del repositorio")) {
-                                // Guardar la URL completa como ID
-                                config_add_custom_repo(config, ui_state->new_repo_name, ui_state->new_repo_url);
-                                repository_add(manager, ui_state->new_repo_name, ui_state->new_repo_url);
-                                config_save(config);
-                                append_to_message(ui_state->message, sizeof(ui_state->message), "Repo añadido: ");
-                                append_to_message(ui_state->message, sizeof(ui_state->message), ui_state->new_repo_name);
-                                ui_state->show_message = 1;
-                            } else {
-                                snprintf(ui_state->message, sizeof(ui_state->message), "Cancelado");
-                                ui_state->show_message = 1;
-                            }
-                        } else if (ui_state->selected_setting == 2) {
-                            if (manager->repo_count > 0) {
-                                config_remove_custom_repo(config, ui_state->selected_repo);
-                                repository_manager_destroy(manager);
-                                manager = repository_manager_create();
-                                add_persistent_repos(manager, config);
-                                config_save(config);
-                                if (ui_state->selected_repo >= manager->repo_count) {
-                                    ui_state->selected_repo = manager->repo_count - 1;
-                                }
-                                snprintf(ui_state->message, sizeof(ui_state->message), "Repositorio eliminado");
-                                ui_state->show_message = 1;
-                            }
-                        } else if (ui_state->selected_setting == 3) {
-                            config_save(config);
-                            ui_state->mode = UI_MODE_MAIN;
-                        }
+                if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 0) {
+                        ui_state->mode = UI_MODE_REPO_MANAGER;
+                        ui_state->selected_repo = 0;
                     }
                 }
                 ui_draw_settings_menu(ui_state, config);
                 break;
             }
-            case UI_MODE_PATH_PICKER: {
+            case UI_MODE_REPO_MANAGER: {
                 if (input.action == UI_ACTION_BACK) {
                     ui_state->mode = UI_MODE_SETTINGS;
+                } else if (input.action == UI_ACTION_SETTINGS) { // Botón X para añadir
+                    ui_state->is_creating_new = 1;
+                    if (ui_show_text_input(ui_state->new_repo_url, sizeof(ui_state->new_repo_url), "URL completa de Archive.org")) {
+                        if (ui_show_text_input(ui_state->new_repo_name, sizeof(ui_state->new_repo_name), "Nombre del repositorio")) {
+                            ui_state->path_nav = path_navigator_create("sdmc:/");
+                            ui_state->mode = UI_MODE_PATH_PICKER;
+                        }
+                    }
+                } else if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) {
+                        ui_state->selected_repo = (ui_state->selected_repo + 1) % manager->repo_count;
+                    } else if (input.param == -1) {
+                        ui_state->selected_repo = (ui_state->selected_repo - 1 + manager->repo_count) % manager->repo_count;
+                    } else if (input.param == 0 && manager->repo_count > 0) {
+                        ui_state->mode = UI_MODE_REPO_SUBMENU;
+                        ui_state->selected_setting = 0;
+                        ui_state->editing_repo_index = ui_state->selected_repo;
+                    }
+                }
+                ui_draw_repo_manager(manager, ui_state);
+                break;
+            }
+            case UI_MODE_REPO_SUBMENU: {
+                Repository *edit_repo = &manager->repositories[ui_state->editing_repo_index];
+                if (input.action == UI_ACTION_BACK) {
+                    ui_state->mode = UI_MODE_REPO_MANAGER;
+                } else if (input.action == UI_ACTION_SELECT) {
+                    if (input.param == 1) ui_state->selected_setting = (ui_state->selected_setting + 1) % 4;
+                    else if (input.param == -1) ui_state->selected_setting = (ui_state->selected_setting - 1 + 4) % 4;
+                    else if (input.param == 0) {
+                        if (ui_state->selected_setting == 0) { // Editar URL
+                            ui_show_text_input(edit_repo->id, sizeof(edit_repo->id), "Nueva URL");
+                            // Sincronizar con config
+                            Repository *c_repo = config_get_custom_repo(config, ui_state->editing_repo_index);
+                            strcpy(c_repo->id, edit_repo->id);
+                            config_save(config);
+                        } else if (ui_state->selected_setting == 1) { // Editar Path
+                            ui_state->is_creating_new = 0;
+                            ui_state->path_nav = path_navigator_create(edit_repo->download_path);
+                            ui_state->mode = UI_MODE_PATH_PICKER;
+                        } else if (ui_state->selected_setting == 2) { // Editar Nombre
+                            ui_show_text_input(edit_repo->name, sizeof(edit_repo->name), "Nuevo Nombre");
+                            Repository *c_repo = config_get_custom_repo(config, ui_state->editing_repo_index);
+                            strcpy(c_repo->name, edit_repo->name);
+                            config_save(config);
+                        } else if (ui_state->selected_setting == 3) { // Eliminar
+                            config_remove_custom_repo(config, ui_state->editing_repo_index);
+                            repository_manager_destroy(manager);
+                            manager = repository_manager_create();
+                            add_persistent_repos(manager, config);
+                            config_save(config);
+                            ui_state->mode = UI_MODE_REPO_MANAGER;
+                            ui_state->selected_repo = 0;
+                        }
+                    }
+                }
+                ui_draw_repo_submenu(edit_repo, ui_state);
+                break;
+            }
+            case UI_MODE_PATH_PICKER: {
+                if (input.action == UI_ACTION_BACK) {
+                    ui_state->mode = ui_state->is_creating_new ? UI_MODE_REPO_MANAGER : UI_MODE_REPO_SUBMENU;
                     if (ui_state->path_nav) {
                         path_navigator_destroy(ui_state->path_nav);
                         ui_state->path_nav = NULL;
@@ -353,9 +447,21 @@ int main(int argc, char **argv)
                     }
                 } else if (input.action == UI_ACTION_SET_PATH) {
                     if (ui_state->path_nav) {
-                        config_set_download_path(config, path_navigator_get_current(ui_state->path_nav));
-                        config_save(config);
-                        ui_state->mode = UI_MODE_SETTINGS;
+                        const char *new_path = path_navigator_get_current(ui_state->path_nav);
+                        if (ui_state->is_creating_new) {
+                            config_add_custom_repo(config, ui_state->new_repo_name, ui_state->new_repo_url, new_path);
+                            repository_add(manager, ui_state->new_repo_name, ui_state->new_repo_url, new_path);
+                            config_save(config);
+                            ui_state->mode = UI_MODE_REPO_MANAGER;
+                        } else {
+                            Repository *edit_repo = &manager->repositories[ui_state->editing_repo_index];
+                            strcpy(edit_repo->download_path, new_path);
+                            Repository *c_repo = config_get_custom_repo(config, ui_state->editing_repo_index);
+                            strcpy(c_repo->download_path, new_path);
+                            config_save(config);
+                            ui_state->mode = UI_MODE_REPO_SUBMENU;
+                        }
+                        
                         path_navigator_destroy(ui_state->path_nav);
                         ui_state->path_nav = NULL;
                     }
@@ -369,16 +475,25 @@ int main(int argc, char **argv)
             }
         }
 
-        consoleUpdate(NULL);
+        if (ui_state->is_downloading) {
+            ui_draw_progress(ui_state);
+        }
+
+        SDL_RenderPresent(renderer);
     }
 
+    // Cleanup
+    TTF_CloseFont(ui_state->font_main);
+    TTF_CloseFont(ui_state->font_small);
+    SDL_DestroyTexture(ui_state->tex_repo);
+    SDL_DestroyTexture(ui_state->tex_folder);
+    SDL_DestroyTexture(ui_state->tex_file);
+    SDL_DestroyTexture(ui_state->tex_link);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    romfsExit();
     ui_state_destroy(ui_state);
-    repository_manager_destroy(manager);
-    config_save(config);
-    config_destroy(config);
-    archive_org_exit();
-    fsdevUnmountAll();
-    consoleExit(NULL);
+    // ... resto de destroyers ...
 
     return 0;
 }

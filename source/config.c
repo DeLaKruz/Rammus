@@ -77,6 +77,15 @@ int config_load(AppConfig *config) {
                     config->custom_repos[i].id[strcspn(config->custom_repos[i].id, "\n")] = 0;
                 }
             }
+
+            // Leer Ruta de descarga del repo
+            if (fgets(line, sizeof(line), f)) {
+                char *eq = strchr(line, '=');
+                if (eq) {
+                    strncpy(config->custom_repos[i].download_path, eq + 1, sizeof(config->custom_repos[i].download_path) - 1);
+                    config->custom_repos[i].download_path[strcspn(config->custom_repos[i].download_path, "\n")] = 0;
+                }
+            }
             
             config->custom_repos[i].item_count = 0;
             config->custom_repos[i].items = NULL;
@@ -104,6 +113,7 @@ int config_save(AppConfig *config) {
     for (int i = 0; i < config->repo_count; i++) {
         fprintf(f, "repo_name=%s\n", config->custom_repos[i].name);
         fprintf(f, "repo_url=%s\n", config->custom_repos[i].id);
+        fprintf(f, "repo_path=%s\n", config->custom_repos[i].download_path);
     }
     
     fclose(f);
@@ -121,7 +131,7 @@ const char* config_get_download_path(AppConfig *config) {
     return config->download_path;
 }
 
-void config_add_custom_repo(AppConfig *config, const char *name, const char *archive_url) {
+void config_add_custom_repo(AppConfig *config, const char *name, const char *archive_url, const char *download_path) {
     if (!config || !name || !archive_url) return;
     
     Repository *new_repos = (Repository*)realloc(config->custom_repos,
@@ -136,6 +146,9 @@ void config_add_custom_repo(AppConfig *config, const char *name, const char *arc
         strncpy(repo->id, archive_url, sizeof(repo->id) - 1);
         repo->id[sizeof(repo->id) - 1] = '\0';
         
+        strncpy(repo->download_path, download_path, sizeof(repo->download_path) - 1);
+        repo->download_path[sizeof(repo->download_path) - 1] = '\0';
+
         repo->item_count = 0;
         repo->items = NULL;
         
